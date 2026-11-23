@@ -1,0 +1,44 @@
+
+name: DCOIN Network Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Format check
+        run: |
+          test -z "$(gofmt -l .)"
+
+      - name: Download dependencies
+        run: go mod tidy
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build DCOIN Node
+        run: go build -o dcoin-node ./cmd/node
+
+      - name: Verify build
+        run: ls -lh dcoin-node
+        
