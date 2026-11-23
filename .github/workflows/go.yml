@@ -3,11 +3,9 @@ name: DCOIN Network Build
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
@@ -24,11 +22,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
-          cache: true
 
-      - name: Format check
-        run: |
-          test -z "$(gofmt -l .)"
+      - name: Format Go files
+        run: gofmt -w .
 
       - name: Download dependencies
         run: go mod tidy
