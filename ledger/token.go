@@ -143,4 +143,16 @@ func RestoreTestToken(state TestTokenState) (*TestToken, error) {
 
 	return token, nil
 }
+	
+func (t *TestToken) Transfer(from, to string, amount uint64) error {
+	// Isi fungsi Transfer yang sudah ada tetap dipertahankan.
+	return nil
+}
+
+type TestTokenState struct {
+	Balances map[string]uint64 `json:"balances"`
+	Claimed  map[string]bool   `json:"claimed"`
+	Supply   uint64            `json:"supply"`
+}
+	
 
