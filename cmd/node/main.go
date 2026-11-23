@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -24,10 +25,13 @@ func main() {
 		dataPath = "data/dcoin.json"
 	}
 
-	var blockchain *core.Blockchain
-	var accountLedger *ledger.Ledger
+	var (
+		blockchain    *core.Blockchain
+		accountLedger *ledger.Ledger
+		err           error
+	)
 
-	blockchain, accountLedger, err := storage.Load(dataPath)
+	blockchain, accountLedger, err = storage.Load(dataPath)
 
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
