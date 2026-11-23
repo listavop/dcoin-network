@@ -92,5 +92,57 @@ func (t *TestToken) Transfer(
 	t.Balances[from] -= amount
 	t.Balances[to] += amount
 
+type TestTokenState struct {
+	Balances map[string]uint64 `json:"balances"`
+	Claimed  map[string]bool   `json:"claimed"`
+	Supply   uint64            `json:"supply"`
+}
+
+func (t *TestToken) Snapshot() TestTokenState {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	balances := make(map[string]uint64, len(t.Balances))
+	for address, amount := range t.Balances {
+		balances[address] = amount
+	}
+
+	claimed := make(map[string]bool, len(t.Claimed))
+	for address, value := range t.Claimed {
+		claimed[address] = value
+	}
+
+	return TestTokenState{
+		Balances: balances,
+		Claimed:  claimed,
+		Supply:   t.Supply,
+	}
+}
+
+func RestoreTestToken(state TestTokenState) (*TestToken, error) {
+	if state.Supply > TokenMaxSupply {
+		return nil, errors.New("token supply exceeds maximum")
+	}
+
+	var total uint64
+	for _, amount := range state.Balances {
+		if math.MaxUint64-total < amount {
+			return nil, errors.New("token balance overflow")
+		}
+		total += amount
+	}
+
+	if total != state.Supply {
+		return nil, errors.New("token supply does not match balances")
+	}
+
+	token := NewTestToken()
+	token.Balances = state.Balances
+	token.Claimed = state.Claimed
+	token.Supply = state.Supply
+
+	return token, nil
+}
+	
 	return nil
 }
