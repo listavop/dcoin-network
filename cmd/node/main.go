@@ -1,38 +1,58 @@
-
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/listavop/dcoin-network/api"
 	"github.com/listavop/dcoin-network/core"
 	"github.com/listavop/dcoin-network/ledger"
+	"github.com/listavop/dcoin-network/storage"
 )
 
 func main() {
-	log.Println("Starting DCOIN Testnet Node...")
+	log.Println("Starting DCOIN Testnet...")
 
-	// Initialize blockchain
-	blockchain := core.NewBlockchain()
-
-	// Initialize genesis ledger
-	accountLedger, err := ledger.NewLedger("DCOIN_GENESIS")
-	if err != nil {
-		log.Fatal(err)
+	dataPath := os.Getenv("DCOIN_DATA")
+	if dataPath == "" {
+		dataPath = "data/dcoin.json"
 	}
 
-	// Initialize validator identity
+	var blockchain *core.Blockchain
+	var accountLedger *ledger.Ledger
+
+	blockchain, accountLedger, err := storage.Load(dataPath)
+
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Fatal("Storage loading failed:", err)
+		}
+
+		log.Println("Creating new DCOIN blockchain...")
+
+		blockchain = core.NewBlockchain()
+
+		accountLedger, err = ledger.NewLedger("DCOIN_GENESIS")
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		log.Println("Existing blockchain loaded")
+	}
+
 	validator, err := core.NewValidator()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Println("DCOIN Validator initialized")
 	log.Println("Validator ID:", validator.ID)
 
-	// Initialize API
 	server := api.NewServer(blockchain, accountLedger)
 
 	port := os.Getenv("PORT")
@@ -41,16 +61,53 @@ func main() {
 	}
 
 	httpServer := &http.Server{
-		Addr:    ":" + port,
-		Handler: server.Handler(),
+		Addr:              ":" + port,
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Println("Network: DCOIN Testnet")
-	log.Println("Chain ID: dcoin-testnet-1")
-	log.Println("Genesis Block:", blockchain.LatestBlock().Hash)
-	log.Println("RPC Server port:", port)
+	serverErrors := make(chan error, 1)
 
-	if err := httpServer.ListenAndServe(); err != nil {
-		log.Fatal("DCOIN server error:", err)
+	go func() {
+		log.Println("DCOIN RPC listening on port", port)
+		serverErrors <- httpServer.ListenAndServe()
+	}()
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	select {
+	case <-ctx.Done():
+		log.Println("Stopping DCOIN Node...")
+	case err := <-serverErrors:
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Println("Server error:", err)
+		}
 	}
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
+	defer cancel()
+
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Println("Shutdown error:", err)
+	}
+
+	if err := storage.Save(
+		dataPath,
+		blockchain,
+		accountLedger,
+	); err != nil {
+		log.Println("Storage save failed:", err)
+	} else {
+		log.Println("DCOIN blockchain saved successfully")
+	}
+
+	log.Println("DCOIN Node stopped")
 }
