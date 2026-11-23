@@ -57,7 +57,8 @@ func main() {
 
 	log.Println("Validator ID:", validator.ID)
 
-	server := api.NewServer(blockchain, accountLedger)
+	testToken := ledger.NewTestToken()
+server := api.NewServer(blockchain, accountLedger, testToken)
 
 	port := os.Getenv("PORT")
 	if port == "" {
