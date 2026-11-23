@@ -143,6 +143,4 @@ func RestoreTestToken(state TestTokenState) (*TestToken, error) {
 
 	return token, nil
 }
-	
-	return nil
-}
+
