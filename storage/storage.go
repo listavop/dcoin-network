@@ -1,4 +1,3 @@
-
 package storage
 
 import (
@@ -13,21 +12,27 @@ import (
 )
 
 type State struct {
-	Blockchain core.Blockchain `json:"blockchain"`
-	Ledger     ledger.Ledger   `json:"ledger"`
+	Blockchain core.Blockchain      `json:"blockchain"`
+	Ledger     ledger.Ledger        `json:"ledger"`
+	Token      ledger.TestTokenState `json:"token"`
 }
 
-func Save(
+func Save(path string, bc *core.Blockchain, l *ledger.Ledger) error {
+	return SaveWithToken(path, bc, l, ledger.NewTestToken())
+}
+
+func SaveWithToken(
 	path string,
 	bc *core.Blockchain,
 	l *ledger.Ledger,
+	token *ledger.TestToken,
 ) error {
-	if bc == nil || l == nil {
-		return errors.New("blockchain or ledger is nil")
+	if bc == nil || l == nil || token == nil {
+		return errors.New("storage: nil state")
 	}
 
 	if !bc.Validate() {
-		return errors.New("invalid blockchain")
+		return errors.New("storage: invalid blockchain")
 	}
 
 	state := State{
@@ -39,6 +44,7 @@ func Save(
 			Transactions: l.TransactionHistory(),
 			TotalSupply:  l.TotalSupply,
 		},
+		Token: token.Snapshot(),
 	}
 
 	data, err := json.MarshalIndent(state, "", "  ")
@@ -47,37 +53,40 @@ func Save(
 	}
 
 	dir := filepath.Dir(path)
-
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
-	temp := path + ".tmp"
+	tempPath := path + ".tmp"
 
-	if err := os.WriteFile(temp, data, 0600); err != nil {
+	if err := os.WriteFile(tempPath, data, 0600); err != nil {
 		return err
 	}
 
-	if err := os.Rename(temp, path); err != nil {
-		os.Remove(temp)
+	if err := os.Rename(tempPath, path); err != nil {
+		_ = os.Remove(tempPath)
 		return err
 	}
 
 	return nil
 }
 
-func Load(
+func Load(path string) (*core.Blockchain, *ledger.Ledger, error) {
+	bc, accountLedger, _, err := LoadWithToken(path)
+	return bc, accountLedger, err
+}
+
+func LoadWithToken(
 	path string,
-) (*core.Blockchain, *ledger.Ledger, error) {
+) (*core.Blockchain, *ledger.Ledger, *ledger.TestToken, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	var state State
-
 	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	bc := &core.Blockchain{
@@ -85,24 +94,24 @@ func Load(
 	}
 
 	if !bc.Validate() {
-		return nil, nil, errors.New("blockchain integrity check failed")
+		return nil, nil, nil, errors.New("storage: invalid blockchain")
 	}
 
 	if state.Ledger.TotalSupply != ledger.TotalSupply {
-		return nil, nil, errors.New("invalid total supply")
+		return nil, nil, nil, errors.New("storage: incorrect DCOIN total supply")
 	}
 
 	var total uint64
 
-	for _, balance := range state.Ledger.Balances {
-		if math.MaxUint64-total < balance {
-			return nil, nil, errors.New("balance overflow")
+	for _, amount := range state.Ledger.Balances {
+		if math.MaxUint64-total < amount {
+			return nil, nil, nil, errors.New("storage: balance overflow")
 		}
-		total += balance
+		total += amount
 	}
 
 	if total != ledger.TotalSupply {
-		return nil, nil, errors.New("ledger supply mismatch")
+		return nil, nil, nil, errors.New("storage: DCOIN balances do not match supply")
 	}
 
 	accountLedger := &ledger.Ledger{
@@ -111,5 +120,10 @@ func Load(
 		TotalSupply:  state.Ledger.TotalSupply,
 	}
 
-	return bc, accountLedger, nil
+	token, err := ledger.RestoreTestToken(state.Token)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return bc, accountLedger, token, nil
 }
