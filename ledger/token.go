@@ -7,15 +7,22 @@ import (
 )
 
 const (
-	TokenName       = "DCOIN Test Token"
-	TokenSymbol     = "TDCO"
-	TokenDecimals   = 8
-	TokenMaxSupply  = uint64(1_000_000_000) * 100_000_000
-	FaucetAmount    = uint64(1_000) * 100_000_000
+	TokenName     = "DCOIN Test Token"
+	TokenSymbol   = "TDCO"
+	TokenDecimals = 8
+
+	TokenMaxSupply uint64 = 1_000_000_000 * 100_000_000
+	FaucetAmount   uint64 = 1_000 * 100_000_000
 )
 
 type TestToken struct {
 	mu       sync.RWMutex
+	Balances map[string]uint64 `json:"balances"`
+	Claimed  map[string]bool   `json:"claimed"`
+	Supply   uint64            `json:"supply"`
+}
+
+type TestTokenState struct {
 	Balances map[string]uint64 `json:"balances"`
 	Claimed  map[string]bool   `json:"claimed"`
 	Supply   uint64            `json:"supply"`
@@ -34,24 +41,22 @@ func (t *TestToken) Faucet(address string) error {
 	defer t.mu.Unlock()
 
 	if address == "" {
-		return errors.New("invalid address")
+		return errors.New("address is required")
 	}
 
 	if t.Claimed[address] {
 		return errors.New("faucet already claimed")
 	}
 
-	if t.Supply > TokenMaxSupply-FaucetAmount {
-		return errors.New("token faucet supply exhausted")
+	if FaucetAmount > TokenMaxSupply-t.Supply {
+		return errors.New("maximum token supply reached")
 	}
 
-	balance := t.Balances[address]
-
-	if math.MaxUint64-balance < FaucetAmount {
+	if math.MaxUint64-t.Balances[address] < FaucetAmount {
 		return errors.New("balance overflow")
 	}
 
-	t.Balances[address] = balance + FaucetAmount
+	t.Balances[address] += FaucetAmount
 	t.Supply += FaucetAmount
 	t.Claimed[address] = true
 
@@ -65,37 +70,34 @@ func (t *TestToken) Balance(address string) uint64 {
 	return t.Balances[address]
 }
 
-func (t *TestToken) Transfer(
-	from string,
-	to string,
-	amount uint64,
-) error {
+func (t *TestToken) Transfer(from, to string, amount uint64) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if from == "" || to == "" || from == to {
-		return errors.New("invalid address")
+	if from == "" || to == "" {
+		return errors.New("addresses are required")
+	}
+
+	if from == to {
+		return errors.New("cannot transfer to the same address")
 	}
 
 	if amount == 0 {
-		return errors.New("invalid amount")
+		return errors.New("amount must be greater than zero")
 	}
 
 	if t.Balances[from] < amount {
-		return errors.New("insufficient TDCO balance")
+		return errors.New("insufficient balance")
 	}
 
 	if math.MaxUint64-t.Balances[to] < amount {
-		return errors.New("balance overflow")
+		return errors.New("recipient balance overflow")
 	}
 
 	t.Balances[from] -= amount
 	t.Balances[to] += amount
 
-type TestTokenState struct {
-	Balances map[string]uint64 `json:"balances"`
-	Claimed  map[string]bool   `json:"claimed"`
-	Supply   uint64            `json:"supply"`
+	return nil
 }
 
 func (t *TestToken) Snapshot() TestTokenState {
@@ -125,6 +127,7 @@ func RestoreTestToken(state TestTokenState) (*TestToken, error) {
 	}
 
 	var total uint64
+
 	for _, amount := range state.Balances {
 		if math.MaxUint64-total < amount {
 			return nil, errors.New("token balance overflow")
@@ -136,23 +139,17 @@ func RestoreTestToken(state TestTokenState) (*TestToken, error) {
 		return nil, errors.New("token supply does not match balances")
 	}
 
-	token := NewTestToken()
-	token.Balances = state.Balances
-	token.Claimed = state.Claimed
-	token.Supply = state.Supply
+	if state.Balances == nil {
+		state.Balances = make(map[string]uint64)
+	}
 
-	return token, nil
-}
-	
-func (t *TestToken) Transfer(from, to string, amount uint64) error {
-	// Isi fungsi Transfer yang sudah ada tetap dipertahankan.
-	return nil
-}
+	if state.Claimed == nil {
+		state.Claimed = make(map[string]bool)
+	}
 
-type TestTokenState struct {
-	Balances map[string]uint64 `json:"balances"`
-	Claimed  map[string]bool   `json:"claimed"`
-	Supply   uint64            `json:"supply"`
+	return &TestToken{
+		Balances: state.Balances,
+		Claimed:  state.Claimed,
+		Supply:   state.Supply,
+	}, nil
 }
-	
-
