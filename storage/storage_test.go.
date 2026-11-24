@@ -1,0 +1,72 @@
+
+package storage
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/listavop/dcoin-network/core"
+	"github.com/listavop/dcoin-network/ledger"
+)
+
+func TestSaveAndLoadWithToken(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dcoin.json")
+
+	blockchain := core.NewBlockchain()
+
+	accountLedger, err := ledger.NewLedger("DCOIN_GENESIS")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	token := ledger.NewTestToken()
+
+	if err := token.Faucet("DCOIN_TEST_WALLET"); err != nil {
+		t.Fatal(err)
+	}
+
+	err = SaveWithToken(path, blockchain, accountLedger, token)
+	if err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+
+	loadedBlockchain, loadedLedger, loadedToken, err := LoadWithToken(path)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if !loadedBlockchain.Validate() {
+		t.Fatal("loaded blockchain is invalid")
+	}
+
+	if loadedLedger.Balance("DCOIN_GENESIS") != ledger.TotalSupply {
+		t.Fatal("DCOIN genesis balance was not preserved")
+	}
+
+	expectedBalance := token.Balance("DCOIN_TEST_WALLET")
+	actualBalance := loadedToken.Balance("DCOIN_TEST_WALLET")
+
+	if actualBalance != expectedBalance {
+		t.Fatalf("TDCO balance mismatch: expected %d, got %d",
+			expectedBalance, actualBalance)
+	}
+
+	if loadedToken.Snapshot().Supply != token.Snapshot().Supply {
+		t.Fatal("TDCO total supply was not preserved")
+	}
+
+	if err := os.Stat(path); err != nil {
+		t.Fatalf("saved file does not exist: %v", err)
+	}
+}
+
+func TestLoadMissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.json")
+
+	_, _, _, err := LoadWithToken(path)
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
