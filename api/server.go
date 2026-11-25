@@ -33,12 +33,29 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 
+// CORS middleware allows the Vercel Explorer to access this API.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "ok",
+			"status":  "ok",
 			"network": "DCOIN Testnet",
 		})
 	})
@@ -69,9 +86,9 @@ func (s *Server) Handler() http.Handler {
 		}
 
 		writeJSON(w, http.StatusOK, map[string]any{
-			"address": address,
-			"balance": s.Ledger.Balance(address),
-			"symbol":  "DCO",
+			"address":  address,
+			"balance":  s.Ledger.Balance(address),
+			"symbol":   "DCO",
 			"decimals": ledger.Decimals,
 		})
 	})
@@ -82,10 +99,10 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("/api/v1/token", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"name":        ledger.TokenName,
-			"symbol":      ledger.TokenSymbol,
-			"decimals":    ledger.TokenDecimals,
-			"max_supply":  ledger.TokenMaxSupply,
+			"name":         ledger.TokenName,
+			"symbol":       ledger.TokenSymbol,
+			"decimals":     ledger.TokenDecimals,
+			"max_supply":   ledger.TokenMaxSupply,
 			"total_supply": s.Token.Supply,
 		})
 	})
@@ -140,5 +157,6 @@ func (s *Server) Handler() http.Handler {
 		})
 	})
 
-	return mux
+	return corsMiddleware(mux)
 }
+
